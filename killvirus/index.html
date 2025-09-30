@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artery Defense</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+        }
+
+        .game-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        canvas {
+            border: 3px solid #ff4444;
+            border-radius: 10px;
+            background: linear-gradient(180deg, #ffcccc 0%, #ff8888 100%);
+            cursor: crosshair;
+            display: block;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .life-bar {
+            width: 200px;
+            height: 25px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid white;
+        }
+
+        .life-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ff0000);
+            transition: width 0.3s ease;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+        }
+
+        .game-over h2 {
+            margin-bottom: 15px;
+            font-size: 36px;
+        }
+
+        .game-over button {
+            padding: 10px 30px;
+            font-size: 18px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+
+        .game-over button:hover {
+            background: #ff6666;
+        }
+
+        .start-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .start-screen h1 {
+            margin-bottom: 20px;
+            font-size: 42px;
+            color: #ff4444;
+        }
+
+        .start-screen button {
+            padding: 15px 40px;
+            font-size: 24px;
+            background: #44ff44;
+            color: black;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+
+        .start-screen button:hover {
+            background: #66ff66;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-info">
+            <div>Punteggio: <span id="score">0</span></div>
+            <div class="life-bar">
+                <div class="life-fill" id="lifeBar" style="width: 100%;"></div>
+            </div>
+            <div>Vita: <span id="life">100</span>%</div>
+        </div>
+        <canvas id="gameCanvas" width="600" height="700"></canvas>
+    </div>
+
+    <div class="start-screen" id="startScreen">
+        <h1>🩺 Artery Defense 🦠</h1>
+        <p>Elimina i virus cliccandoci sopra!</p>
+        <p>Non colpire i globuli rossi!</p>
+        <p>Non lasciare scappare i virus!</p>
+        <button onclick="startGame()">INIZIA</button>
+    </div>
+
+    <div class="game-over" id="gameOver">
+        <h2>Game Over!</h2>
+        <p>Punteggio finale: <span id="finalScore">0</span></p>
+        <button onclick="resetGame()">Rigioca</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game variables
+        let entities = [];
+        let score = 0;
+        let life = 100;
+        let gameSpeed = 1;
+        let gameRunning = false;
+        let lastSpawn = 0;
+        let spawnInterval = 1500;
+        let speedIncreaseTimer = 0;
+        
+        // Entity class
+        class Entity {
+            constructor(type) {
+                this.type = type; // 'virus' or 'redcell'
+                this.x = Math.random() * (canvas.width - 40) + 20;
+                this.y = canvas.height + 30;
+                this.size = 30;
+                this.speed = (Math.random() * 1.5 + 1) * gameSpeed;
+                this.alive = true;
+                
+                // Visual properties
+                if (type === 'virus') {
+                    this.color = '#00ff00';
+                    this.shape = 'spike';
+                } else {
+                    this.color = '#ff0000';
+                    this.shape = 'circle';
+                }
+            }
+            
+            update() {
+                this.y -= this.speed;
+                
+                // Check if entity has left the screen
+                if (this.y < -this.size) {
+                    this.alive = false;
+                    if (this.type === 'virus') {
+                        // Virus escaped, reduce life
+                        updateLife(-10);
+                    }
+                }
+            }
+            
+            draw() {
+                ctx.save();
+				const img = new Image();
+				img.src = this.type === 'virus' ? 'virus.png' : 'globulo.png';
+				ctx.drawImage(img, this.x - this.size, this.y - this.size, this.size * 2, this.size * 2);
+                /*
+                if (this.type === 'virus') {
+                    // Draw virus (spiky circle placeholder)
+                    ctx.fillStyle = this.color;
+                    ctx.strokeStyle = '#00aa00';
+                    ctx.lineWidth = 2;
+                    
+                    // Draw spiky virus
+                    ctx.beginPath();
+                    for (let i = 0; i < 12; i++) {
+                        const angle = (i / 12) * Math.PI * 2;
+                        const radius = i % 2 === 0 ? this.size : this.size * 0.7;
+                        const x = this.x + Math.cos(angle) * radius;
+                        const y = this.y + Math.sin(angle) * radius;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Add virus details
+                    ctx.fillStyle = '#005500';
+                    ctx.beginPath();
+                    ctx.arc(this.x - 5, this.y - 5, 3, 0, Math.PI * 2);
+                    ctx.arc(this.x + 5, this.y - 5, 3, 0, Math.PI * 2);
+                    ctx.fill();
+					
+                } else {
+                    // Draw red blood cell (circle placeholder)
+                    ctx.fillStyle = this.color;
+                    ctx.strokeStyle = '#aa0000';
+                    ctx.lineWidth = 2;
+                    
+                    // Draw cell
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Add cell center detail
+                    ctx.fillStyle = '#ffcccc';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                }*/
+                
+                ctx.restore();
+            }
+            
+            isClicked(x, y) {
+                const distance = Math.sqrt((x - this.x) ** 2 + (y - this.y) ** 2);
+                return distance < this.size;
+            }
+        }
+        
+        // Game functions
+        function updateLife(amount) {
+            life += amount;
+            life = Math.max(0, Math.min(100, life));
+            document.getElementById('life').textContent = Math.floor(life);
+            document.getElementById('lifeBar').style.width = life + '%';
+            
+            if (life <= 0) {
+                endGame();
+            }
+        }
+        
+        function updateScore(points) {
+            score += points;
+            document.getElementById('score').textContent = score;
+        }
+        
+        function spawnEntity() {
+            // 60% chance to spawn virus, 40% red cell
+            const type = Math.random() < 0.6 ? 'virus' : 'redcell';
+            entities.push(new Entity(type));
+        }
+        
+        function gameLoop(timestamp) {
+            if (!gameRunning) return;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw artery background effect
+            ctx.fillStyle = 'rgba(255, 200, 200, 0.1)';
+            for (let i = 0; i < 5; i++) {
+                ctx.fillRect(i * 40, 0, 20, canvas.height);
+            }
+            
+            // Spawn new entities
+            if (timestamp - lastSpawn > spawnInterval) {
+                spawnEntity();
+                lastSpawn = timestamp;
+                spawnInterval = Math.max(500, 1500 - score * 5); // Increase spawn rate
+            }
+            
+            // Update and draw entities
+            entities = entities.filter(entity => {
+                if (entity.alive) {
+                    entity.update();
+                    entity.draw();
+                }
+                return entity.alive;
+            });
+            
+            // Increase game speed over time
+            if (timestamp - speedIncreaseTimer > 10000) { // Every 10 seconds
+                gameSpeed += 0.2;
+                speedIncreaseTimer = timestamp;
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Mouse click handler
+        canvas.addEventListener('click', (e) => {
+            if (!gameRunning) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = entities.length - 1; i >= 0; i--) {
+                if (entities[i].isClicked(x, y)) {
+                    const entity = entities[i];
+                    
+                    if (entity.type === 'virus') {
+                        // Killed virus - gain points
+                        updateScore(5);
+                        entity.alive = false;
+                        
+                        // Particle effect
+                        createParticles(entity.x, entity.y, '#00ff00');
+                    } else {
+                        // Killed red blood cell - lose life
+                        updateLife(-15);
+                        entity.alive = false;
+                        
+                        // Particle effect
+                        createParticles(entity.x, entity.y, '#ff0000');
+                    }
+                    break;
+                }
+            }
+        });
+        
+        function createParticles(x, y, color) {
+            // Simple particle effect
+            ctx.save();
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const vx = Math.cos(angle) * 3;
+                const vy = Math.sin(angle) * 3;
+                
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                ctx.arc(x + vx * 10, y + vy * 10, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+        
+        function startGame() {
+            document.getElementById('startScreen').style.display = 'none';
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function endGame() {
+            gameRunning = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        function resetGame() {
+            entities = [];
+            score = 0;
+            life = 100;
+            gameSpeed = 1;
+            lastSpawn = 0;
+            spawnInterval = 1500;
+            speedIncreaseTimer = 0;
+            
+            updateLife(0);
+            updateScore(0);
+            
+            document.getElementById('gameOver').style.display = 'none';
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Custom cursor (will be replaced with syringe image)
+        canvas.style.cursor = 'crosshair';
+    </script>
+</body>
+</html>

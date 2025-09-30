@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gioco di Videoscrittura</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        #gameContainer {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+        
+        #setupScreen {
+            text-align: center;
+        }
+        
+        #setupScreen label {
+            font-size: 1.2em;
+            color: #333;
+            display: block;
+            margin-bottom: 15px;
+        }
+        
+        #minutesInput {
+            font-size: 1.5em;
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            width: 150px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        #startBtn {
+            font-size: 1.2em;
+            padding: 15px 40px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #startBtn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        #gameScreen {
+            display: none;
+        }
+        
+        #stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        #canvas {
+            display: block;
+            margin: 0 auto;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+        }
+        
+        #gameOver {
+            display: none;
+            text-align: center;
+        }
+        
+        #finalScore {
+            font-size: 3em;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        
+        #restartBtn {
+            font-size: 1.2em;
+            padding: 15px 40px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+        
+        #restartBtn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <h1>🎮 Gioco di Videoscrittura</h1>
+        
+        <div id="setupScreen">
+            <label for="minutesInput">Imposta i minuti di gioco:</label>
+            <input type="number" id="minutesInput" min="1" max="30" value="2">
+            <br>
+            <button id="startBtn">Inizia il Gioco</button>
+            <div class="loading" id="loadingMsg" style="display:none;">Caricamento parole...</div>
+        </div>
+        
+        <div id="gameScreen">
+            <div id="stats">
+                <div class="stat">
+                    <div class="stat-label">Tempo</div>
+                    <div class="stat-value" id="timer">0:00</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Punteggio</div>
+                    <div class="stat-value" id="score">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Parole</div>
+                    <div class="stat-value" id="wordsCount">0</div>
+                </div>
+            </div>
+            <canvas id="canvas" width="700" height="400"></canvas>
+        </div>
+        
+        <div id="gameOver">
+            <h2>Tempo Scaduto!</h2>
+            <div id="finalScore"></div>
+            <p>Parole completate: <span id="finalWords"></span></p>
+            <button id="restartBtn">Gioca Ancora</button>
+        </div>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameState = {
+            words: [],
+            currentWord: null,
+            typedText: '',
+            score: 0,
+            wordsCompleted: 0,
+            timeLeft: 0,
+            gameActive: false,
+            wordList: [],
+            flashRed: false,
+            flashCount: 0
+        };
+        
+        // Carica parole italiane da repository GitHub
+        async function loadWords() {
+            try {
+                // Carica il file con circa 60.000 parole italiane
+                const response = await fetch('https://raw.githubusercontent.com/napolux/paroleitaliane/master/parole.txt');
+                const text = await response.text();
+                
+                // Dividi in righe e filtra
+                const allWords = text.split('\n')
+                    .map(word => word.trim().toLowerCase())
+                    .filter(word => {
+                        // Solo parole tra 4 e 12 caratteri, senza caratteri speciali
+                        return word.length >= 4 && 
+                               word.length <= 12 && 
+                               /^[a-zàèéìòù]+$/.test(word);
+                    });
+                
+                // Prendi un sottoinsieme casuale di 500 parole per il gioco
+                const shuffled = allWords.sort(() => Math.random() - 0.5);
+                return shuffled.slice(0, 500);
+                
+            } catch (error) {
+                console.error('Errore caricamento parole:', error);
+                
+                // Lista di backup in caso di errore
+                return [
+                    'casa', 'sole', 'mare', 'libro', 'gatto', 'cane', 'fiore', 'albero',
+                    'notte', 'giorno', 'acqua', 'fuoco', 'terra', 'aria', 'monte', 'piano',
+                    'pane', 'tempo', 'mondo', 'vita', 'amore', 'pace', 'stella', 'luna',
+                    'verde', 'rosso', 'giallo', 'bianco', 'nero', 'rosa', 'viola', 'arancio',
+                    'porta', 'finestra', 'tavolo', 'sedia', 'letto', 'strada', 'piazza', 'ponte',
+                    'scuola', 'classe', 'penna', 'quaderno', 'zaino', 'banco', 'lavagna', 'carta',
+                    'mano', 'piede', 'testa', 'occhio', 'bocca', 'naso', 'dente', 'orecchio',
+                    'sport', 'calcio', 'palla', 'gioco', 'corsa', 'salto', 'nuoto', 'bici',
+                    'cibo', 'pasta', 'pizza', 'gelato', 'frutta', 'mela', 'pera', 'banana',
+                    'estate', 'inverno', 'primavera', 'autunno', 'anno', 'mese', 'settimana', 'ora',
+                    'musica', 'canto', 'danza', 'suono', 'nota', 'radio', 'voce', 'canzone',
+                    'cielo', 'nuvola', 'pioggia', 'vento', 'neve', 'nebbia', 'sereno', 'buio',
+                    'bosco', 'prato', 'fiume', 'lago', 'collina', 'valle', 'campo', 'giardino'
+                ];
+            }
+        }
+        
+        function getRandomWord() {
+            if (gameState.wordList.length === 0) return 'errore';
+            return gameState.wordList[Math.floor(Math.random() * gameState.wordList.length)];
+        }
+        
+        function createNewWord() {
+            const word = getRandomWord();
+            
+            // Calcola la larghezza approssimativa della parola
+            ctx.font = 'bold 32px Arial';
+            const wordWidth = ctx.measureText(word).width;
+            
+            // Margini di sicurezza
+            const marginX = 20;
+            const marginY = 40;
+            
+            return {
+                text: word,
+                x: Math.random() * (canvas.width - wordWidth - marginX * 2) + marginX,
+                y: Math.random() * (canvas.height - marginY * 2) + marginY,
+                completed: false
+            };
+        }
+        
+        function drawWord(word) {
+            ctx.font = 'bold 32px Arial';
+            
+            // Disegna le lettere non ancora digitate
+            let xOffset = 0;
+            for (let i = 0; i < word.text.length; i++) {
+                const char = word.text[i];
+                
+                if (i < gameState.typedText.length) {
+                    // Lettere già digitate (verdi)
+                    ctx.fillStyle = '#10b981';
+                } else {
+                    // Lettere da digitare (nere o rosse se errore)
+                    ctx.fillStyle = gameState.flashRed ? '#ef4444' : '#333';
+                }
+                
+                ctx.fillText(char, word.x + xOffset, word.y);
+                xOffset += ctx.measureText(char).width;
+            }
+        }
+        
+        function updateTimer() {
+            const minutes = Math.floor(gameState.timeLeft / 60);
+            const seconds = gameState.timeLeft % 60;
+            document.getElementById('timer').textContent = 
+                `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        function updateScore() {
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('wordsCount').textContent = gameState.wordsCompleted;
+        }
+        
+        function draw() {
+            // Pulisci canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Disegna la parola corrente
+            if (gameState.currentWord) {
+                drawWord(gameState.currentWord);
+            }
+            
+            // Gestisci il lampeggio rosso
+            if (gameState.flashRed) {
+                gameState.flashCount++;
+                if (gameState.flashCount > 15) {
+                    gameState.flashRed = false;
+                    gameState.flashCount = 0;
+                }
+            }
+        }
+        
+        function gameLoop() {
+            if (!gameState.gameActive) return;
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        function endGame() {
+            gameState.gameActive = false;
+            document.getElementById('gameScreen').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'block';
+            document.getElementById('finalScore').textContent = gameState.score + ' punti';
+            document.getElementById('finalWords').textContent = gameState.wordsCompleted;
+        }
+        
+        async function startGame() {
+            const minutes = parseInt(document.getElementById('minutesInput').value);
+            if (minutes < 1 || minutes > 30) {
+                alert('Inserisci un valore tra 1 e 30 minuti');
+                return;
+            }
+            
+            // Mostra caricamento
+            document.getElementById('loadingMsg').style.display = 'block';
+            document.getElementById('startBtn').disabled = true;
+            
+            // Carica le parole
+            gameState.wordList = await loadWords();
+            
+            // Nascondi caricamento
+            document.getElementById('loadingMsg').style.display = 'none';
+            
+            // Inizializza gioco
+            gameState.score = 0;
+            gameState.wordsCompleted = 0;
+            gameState.timeLeft = minutes * 60;
+            gameState.typedText = '';
+            gameState.gameActive = true;
+            gameState.currentWord = createNewWord();
+            
+            document.getElementById('setupScreen').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('gameScreen').style.display = 'block';
+            
+            updateTimer();
+            updateScore();
+            
+            // Timer countdown
+            const timerInterval = setInterval(() => {
+                gameState.timeLeft--;
+                updateTimer();
+                
+                if (gameState.timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    endGame();
+                }
+            }, 1000);
+            
+            gameLoop();
+        }
+        
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', startGame);
+        
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            document.getElementById('setupScreen').style.display = 'block';
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('startBtn').disabled = false;
+        });
+        
+        document.addEventListener('keypress', (e) => {
+            if (!gameState.gameActive || !gameState.currentWord) return;
+            
+            const char = e.key.toLowerCase();
+            const expectedChar = gameState.currentWord.text[gameState.typedText.length];
+            
+            if (char === expectedChar) {
+                // Lettera corretta
+                gameState.typedText += char;
+                
+                // Parola completata
+                if (gameState.typedText === gameState.currentWord.text) {
+                    gameState.score += 5;
+                    gameState.wordsCompleted++;
+                    updateScore();
+                    
+                    // Nuova parola
+                    gameState.currentWord = createNewWord();
+                    gameState.typedText = '';
+                }
+            } else {
+                // Lettera sbagliata - lampeggia rosso e resetta
+                gameState.flashRed = true;
+                gameState.flashCount = 0;
+                gameState.typedText = '';
+            }
+        });
+    </script>
+</body>
+</html>
